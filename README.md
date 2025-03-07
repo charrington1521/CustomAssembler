@@ -14,19 +14,19 @@ Logisim 2.7.1
 
 ## Table of Contents
 
-<a href="Usage">                Skip ToC</a>
+**[Skip ToC](#usage-and-support)**
 
-<a href="Usage">                **Usage**</a>
+**[Usage](#usage-and-support)**
 
-- <a href="Assembling Single">  Assembling .asm Files</a>
-- <a href="Assembling Multiple">Linking Multiple .asm Files</a>
-- <a href="Running Hex">        Running .hex Files in Logisim</a>
+- [Assembling .asm Files](#assembling-a-asm-file)
+- [Linking Multiple .asm Files](#linking-multiple-asm-files)
+- [Running .hex Files in Logisim](#running-a-hex-file)
 
-<a href="Implementation">       **Implementation**</a>
+**[Implementation](#implementation)**
 
 - 
 
-<a href="Validation">           **Validation**</a>
+**[Validation](#validation)**
 
 - 
 
@@ -46,7 +46,7 @@ Logisim 2.7.1
 
 - By default this will create an "output.hex" file at the current working directory the command was run from. To specify a separate location, use the ```-o``` flag 
 
-<a name = "Assembling Multiple"></a>
+[Return to ToC](#table-of-contents)
 
 ### Linking multiple .asm files
 
@@ -58,7 +58,7 @@ Logisim 2.7.1
 - One can also place all the .asm files into a "asm" folder and give the path to this instead. In this case, the assembler expects there to be a "main.asm" file to link first. Everything else links alphabetically. 
 @Future work will allow a file for specifiying link order. 
 
-<a name = "Running Hex"></a>
+[Return to ToC](#table-of-contents)
 
 ### Running a .hex File
 
@@ -76,6 +76,12 @@ Logisim 2.7.1
 
 - The program has been sucessfully run! Double clicking and diving into the register files will allow one to see register results. All memory based results can be viewed in the memory element (RAM) at the far right of the "Full CPU" subcircuit. 
 
+[Return to ToC](#table-of-contents)
+
 ## Implementation
 
+[Return to ToC](#table-of-contents)
+
 ## Validation
+
+[Return to ToC](#table-of-contents)
