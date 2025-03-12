@@ -43,27 +43,6 @@ elif args.m == 'basic':
 else:
     raise(Exception("Expected a valid assembler mode."))
 
-if args.p == []:
-    files_to_link = asm_files_in_dir(cwd)
-else:
-    files_to_link = []
-
-    for path in args.p:
-        if not os.path.exists(path):
-            if not os.path.exists(cwd+"/"+path):
-                raise(Exception(f"Path {cwd+'/'+path} was not found"))
-            else:
-                path = cwd+"/"+path
-                
-        if os.path.isdir(path):
-            for file in asm_files_in_dir(path):
-                files_to_link.append(file)
-        elif os.path.isfile(path):
-            assert(path[-3:] == 'asm')
-            files_to_link.append(path)
-        else:
-            raise(Exception(f"Argument {path} is not a directory or .asm file"))
-
 def is_i_type(command: str) -> bool:
     '''
     @param command: a command such as 'addi'
@@ -79,7 +58,7 @@ def literal_to_bits(literal: str, pad: int = IMM_SIZE) -> str:
     '''
     if literal[0] == "-":
         num = int(literal[1:])
-        num = 2 ** IMM_SIZE - num
+        num = 2 ** pad - num
     else:
         num = int(literal)
 
@@ -97,7 +76,6 @@ def instruction_to_hex(instruction: List[str]) -> str:
     mode = INSTRUCTION_SET[command][0]
     op  = INSTRUCTION_SET[command][1]
 
-    #could be worthwhile to have a destination = $0 error. . . 
     if not is_i_type(command): #All R-type commands
         dest = REGISTERS[instruction[1]]
         src1 = REGISTERS[instruction[2]]
@@ -118,7 +96,7 @@ def instruction_to_hex(instruction: List[str]) -> str:
     elif command == 'beq' or command == 'bne':
         src1 = REGISTERS[instruction[1]]
         src2 = REGISTERS[instruction[2]]
-        imm = literal_to_bits(instruction[3])
+        imm = literal_to_bits((instruction[3]))
     
         instruction_bin = "".join([mode, op, src1, src2, imm])
 
@@ -136,22 +114,6 @@ def instruction_to_hex(instruction: List[str]) -> str:
     
     instruction_bin = instruction_bin.replace('0b', '').ljust(INSTRUCTION_SIZE, '0')
     return hex(int(instruction_bin, 2)).replace('0x', '').rjust(ceil(INSTRUCTION_SIZE/4), '0')
-
-def clean(file: str) -> List[List[str]]: 
-    ''' Removes whitespace and comments from a .asm file. Convert the file
-    into parsed assembly instructions of the form [command, args. . .]
-    @param file: file to remove spaces and convert
-    @return: a list containing each instruction
-    '''
-    f_str = ""
-    with open(file, "r", encoding='utf8') as f:
-        
-        for line in f:
-            f_str += line.strip() + "\n"
-
-    f_str = re.sub("#.+?\\n", "\n", f_str)
-
-    return [line.split() for line in f_str.split('\n') if len(line) > 0]
 
 def extract_labels(clean_file: List[List[str]]) -> Dict[str, int]:
     '''REMOVES and stores location of label lines in a parsed assembly instruction
@@ -172,7 +134,7 @@ def extract_labels(clean_file: List[List[str]]) -> Dict[str, int]:
                 raise Exception("Label occurs multiple times")
             else:
                 label = label[:-1]
-                labels[label] = line_number
+                labels[label] = line_number - 1
         else:
             line_number += 1
 
@@ -181,35 +143,130 @@ def extract_labels(clean_file: List[List[str]]) -> Dict[str, int]:
 
     return labels
 
+class CleanFile():
+
+    def __init__(self, file_path: str):
+        self.clean_file = self.clean(file_path)
+        self.name = file_path.split("/")[-1][:-4]
+        x = extract_labels(self.clean_file)
+        self.labels : Dict[str, int] = x
+
+    def clean(self, file: str) -> List[List[str]]: 
+        ''' Removes whitespace and comments from a .asm file. Convert the file
+        into parsed assembly instructions of the form [command, args. . .]
+        @param file: file to remove spaces and convert
+        @return: a list containing each instruction
+        '''
+        f_str = ""
+        with open(file, "r", encoding='utf8') as f:
+            
+            for line in f:
+                f_str += line.strip() + "\n"
+
+        f_str = re.sub("(#.+?\n)", "\n", f_str)
+        f_str = re.sub("#", "", f_str)
+
+        return [line.split() for line in f_str.split('\n') if len(line) > 0]
+
+    def is_referred_to(self, label):
+        """Returns whether or not a given label occurs in a cleaned file
+        @param label: label to check for
+        @param clean_file: a cleaned format file
+        @param labels: the labels of the given file. Run extract labels to retrieve.
+        """
+        referrents = [instruction[-1] for instruction in self.clean_file if instruction[-1] in self.labels]
+
+        return label in referrents
+    
+    def replace_label(self, old_label, new_label):
+        """Replaces the old_label with the new_label
+        @param old_label: the label to replace
+        @param new_label: the label to put in instead
+        """
+        old = self.labels.pop(label)
+        self.labels[self.name + label] = old
+
+    def __len__(self):
+        return len(self.clean_file)
+
 if __name__ == '__main__':
-    clean_files = [clean(file) for file in files_to_link]
+    if args.p == []:
+        files_to_link = asm_files_in_dir(cwd)
+    else:
+        files_to_link = []
+
+        for path in args.p:
+            if not os.path.exists(path):
+                if os.path.exists(cwd+"/"+path):
+                    path = cwd+"/"+path
+                elif os.path.exists(cwd+"/asm/"+path):
+                    path = cwd+"/asm/"+path
+                else:
+                    if not os.path.exists(cwd+"/"+path):
+                        raise(Exception(f"Path {cwd+'/'+path} was not found"))
+                    else:
+                        raise(Exception(f"Path {cwd+'/asm/'+path} was not found"))
+                    
+            if os.path.isdir(path):
+                for file in asm_files_in_dir(path):
+                    files_to_link.append(file)
+            elif os.path.isfile(path):
+                assert(path[-3:] == 'asm')
+                files_to_link.append(path)
+            else:
+                raise(Exception(f"Argument {path} is not a directory or .asm file"))
+
+
+    clean_files = [CleanFile(file) for file in files_to_link]
     labels = dict({})
     line_number = 0
     for file in clean_files:
-        new_labels = extract_labels(file)
+        to_replace = dict({})
+        #this does not ensure that all labels in a file are defined and doesnt throw an error
+        #if there is an issue because of this
+        for label in file.labels:
+            is_defined = label in labels
+            if file.is_referred_to(label):
+                #A local label
+                to_replace[label] = file.name + "_" + label
+                if label in labels:
+                    raise("Bad naming convention of a label in another file")
+            elif is_defined:
+                raise("Global label defined in multiple files")
 
-        for label in new_labels:
-            if label in labels:
-                #multi defn error. . .
-                pass
-            else:
-                labels[label] = new_labels[label] + line_number
+            labels[label] = file.labels[label] + line_number
+
+        for label in file.labels:
+            labels[label] = file.labels[label] + line_number
 
         line_number += len(file)
+
+    for label in to_replace:
+        old = labels.pop(label)
+        labels[to_replace[label]] = old
 
     clean_assembled = []
 
     line_number = 0
     for file in clean_files:
-        for instruction in file:
-            if instruction[-1] in labels:
+        for instruction in file.clean_file:
+            label = instruction[-1]
+            if label in to_replace.keys():
+                label = to_replace[label]
+
+            if label in labels:
+
                 if instruction[0] == 'j':
-                    instruction[-1] = str(labels[instruction[-1]])
+                    instruction[-1] = str(labels[label] + 1)
                 elif instruction[0] == 'beq' or instruction[0] == 'bne':
-                    instruction[-1] = str(labels[instruction[-1]] - line_number)
+                    instruction[-1] = str(labels[label] - line_number)
+
             clean_assembled.append(instruction)
             line_number += 1
 
+    print(to_replace)
+    print(labels)
+    print(clean_assembled)
     assembled_hex = []
     for instruction in clean_assembled:
         assembled_hex.append(instruction_to_hex(instruction))

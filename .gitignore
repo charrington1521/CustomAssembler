@@ -1,4 +1,4 @@
 /__pycache__
 /asm
 /doc
-/output.hex
+*.hex
