@@ -24,11 +24,7 @@ Logisim 2.7.1
 
 **[Implementation](#implementation)**
 
-- 
-
 **[Validation](#validation)**
-
-- 
 
 ---
 
@@ -40,7 +36,7 @@ Logisim 2.7.1
 
 ### Assembling a .asm file
 
-- Create a MIPs Assembly Language .asm file wherever you would like
+- Create a MIPs style Assembly Language .asm file wherever you would like
 
 - run the following command: ```python assembler_asm_hex.py -p [path to .asm file]``` This command will detect immediately relative file paths (but won't check within sub directories).
 
@@ -80,8 +76,28 @@ Logisim 2.7.1
 
 ## Implementation
 
+In our design we selected a 16-bit CPU, with 16 registers each able to hold words that are two bytes in size. 
+
+The RAM addresses are 16 bits and each word of ram is also two-bytes. 
+
+The 16-bit ALU included uses a standard ripple carry adder.  
+
+In order to represent three registers and all of our included operations, a 21 bit instruction word was chosen. 
+
+We implemented branching and jumping by labels along with multi-file linking in order to assist in the construction of more complicated program structures. 
+
+Labels can be local or global, assumed by whether or not they are referenced within a file. Local labels are handled by appending the containing file’s name at assemble time. This means that naming a label in “main.asm” “other_file_loop.asm” in a linkage with the file “other_file” containing the local label “loop” can cause errors in program execution. 
+
+There are no pseudonyms for branching instructions such as “blt” or ability to parse .data headers in assembly files. 
+
+Furthermore there is no support for a stack pointer and function based jump calls. 
+
+The register $0 is often assumed to have the value 0 within, however, nothing guarantees this behavior in this CPU. 
+
 [Return to ToC](#table-of-contents)
 
 ## Validation
+
+See the document at [this link](https://github.com/charrington1521/CustomAssembler/blob/master/HarringtonCollinFinalReport.pdf)
 
 [Return to ToC](#table-of-contents)
