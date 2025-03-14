@@ -31,6 +31,7 @@ cwd = os.getcwd()
 parser=argparse.ArgumentParser(
 description='''Links and assembles an "output.hex" file for loading into Logisim. Takes in a number of .asm files or directories as input.''')
 parser.add_argument('-m', default='upgraded', help="Mode. 'upgraded' by default. Other option is 'basic' for the basic CPU.")
+parser.add_argument('-n', action="store_true", help="Name output. When specified, output files will be renamed based on input file names.")
 parser.add_argument('-o', type=str, default=cwd, help="Output location: a path to put output.hex at. Current working directory by default.")
 parser.add_argument('-p', nargs='*', default=[], help='An ordered list of paths to link. If none passed the current working directory is used. Paths to directories require one "main.asm" to order the linking.')
 args=parser.parse_args()
@@ -49,6 +50,13 @@ def is_i_type(command: str) -> bool:
     @return: True if command is I-type. False otherwise.
     '''
     return INSTRUCTION_SET[command][0] != '0b' + '0' * MODE_SIZE
+
+def is_branching(command: str) -> bool:
+    '''
+    @param command: a command such as 'beq'
+    @reurn: True if the command branches. False otherwise.
+    '''
+    return command == "beq" or command == "bne" or command == "j"
 
 def literal_to_bits(literal: str, pad: int = IMM_SIZE) -> str:
     '''
@@ -115,41 +123,20 @@ def instruction_to_hex(instruction: List[str]) -> str:
     instruction_bin = instruction_bin.replace('0b', '').ljust(INSTRUCTION_SIZE, '0')
     return hex(int(instruction_bin, 2)).replace('0x', '').rjust(ceil(INSTRUCTION_SIZE/4), '0')
 
-def extract_labels(clean_file: List[List[str]]) -> Dict[str, int]:
-    '''REMOVES and stores location of label lines in a parsed assembly instruction
-    formatted file.
-    @param clean_file: a list of parsed assembly instructions.
-    @return: a dictionary with labels as keys and their line numbers as values.
-    '''
-    labels = dict({})
+class LabelContents():
+    def __init__(self, line_no, is_local):
+        self.line_number = line_no
+        self.is_local = is_local
 
-    line_number = 0
-    for line in clean_file:
-        label = re.findall('[a-zA-Z0-9_ \t]+:', line[0])
-        if len(label) > 0:
-            assert(len(label) == 1)
-            label = label[0]
-
-            if label in labels:
-                raise Exception("Label occurs multiple times")
-            else:
-                label = label[:-1]
-                labels[label] = line_number - 1
-        else:
-            line_number += 1
-
-    for label in labels:
-        clean_file.remove([label+':'])
-
-    return labels
+    def __repr__(self):
+        return f"(line_number={self.line_number}, is_local={self.is_local})"
 
 class CleanFile():
 
     def __init__(self, file_path: str):
         self.clean_file = self.clean(file_path)
         self.name = file_path.split("/")[-1][:-4]
-        x = extract_labels(self.clean_file)
-        self.labels : Dict[str, int] = x
+        self.labels : Dict[str, LabelContents] = self.extract_labels()
 
     def clean(self, file: str) -> List[List[str]]: 
         ''' Removes whitespace and comments from a .asm file. Convert the file
@@ -178,13 +165,40 @@ class CleanFile():
 
         return label in referrents
     
-    def replace_label(self, old_label, new_label):
-        """Replaces the old_label with the new_label
-        @param old_label: the label to replace
-        @param new_label: the label to put in instead
-        """
-        old = self.labels.pop(label)
-        self.labels[self.name + label] = old
+    def extract_labels(self) -> Dict[str, LabelContents]:
+        '''REMOVES and stores location of label lines in a parsed assembly instruction
+        formatted file.
+        @param clean_file: a list of parsed assembly instructions.
+        @return: a dictionary with labels as keys and their line numbers as values.
+        '''
+        # if len(label_name) > 0:
+        #     assert(len(label_name) == 1)
+        #     label_name = label_name[0]
+        expected_local_names = [instruction[-1] for instruction in self.clean_file if is_branching(instruction[0])]
+        
+        toReturn = {}
+        toRemove = []
+
+        line_number = 0
+
+        for line in self.clean_file:
+            label_name = re.findall('[a-zA-Z0-9_ \t]+:', line[0])
+            if len(label_name) > 0:
+                assert(len(label_name) == 1)
+                label_name = label_name[0]
+                if label_name in toReturn:
+                    raise Exception("Label occurs multiple times")
+                else:
+                    label_name = label_name[:-1]
+                    toReturn[label_name] = LabelContents(line_number, label_name in expected_local_names)
+                    toRemove.append(line)
+            else:
+                line_number += 1
+
+        for item in toRemove:
+            self.clean_file.remove(item)
+
+        return toReturn
 
     def __len__(self):
         return len(self.clean_file)
@@ -216,57 +230,53 @@ if __name__ == '__main__':
             else:
                 raise(Exception(f"Argument {path} is not a directory or .asm file"))
 
-
     clean_files = [CleanFile(file) for file in files_to_link]
-    labels = dict({})
-    line_number = 0
-    for file in clean_files:
-        to_replace = dict({})
-        #this does not ensure that all labels in a file are defined and doesnt throw an error
-        #if there is an issue because of this
-        for label in file.labels:
-            is_defined = label in labels
-            if file.is_referred_to(label):
-                #A local label
-                to_replace[label] = file.name + "_" + label
-                if label in labels:
-                    raise("Bad naming convention of a label in another file")
-            elif is_defined:
-                raise("Global label defined in multiple files")
-
-            labels[label] = file.labels[label] + line_number
-
-        for label in file.labels:
-            labels[label] = file.labels[label] + line_number
-
-        line_number += len(file)
-
-    for label in to_replace:
-        old = labels.pop(label)
-        labels[to_replace[label]] = old
 
     clean_assembled = []
 
+    all_labels : Dict[str, LabelContents] = dict({})
+
     line_number = 0
+    toReplace : Dict[str, List[str]] = {}
+    for file in clean_files:
+        toReplace[file.name] = []
+        adjusted_labels = file.labels.copy()
+        for label in adjusted_labels:
+            adjusted_labels[label].line_number += line_number
+            if adjusted_labels[label].is_local:
+                toReplace[file.name].append(label)
+        for label in toReplace[file.name]:
+            old = adjusted_labels.pop(label)
+            adjusted_labels[file.name + "_" + label] = old
+        all_labels.update(adjusted_labels)
+        line_number += len(file)
+
+    line_number = 0
+
     for file in clean_files:
         for instruction in file.clean_file:
             label = instruction[-1]
-            if label in to_replace.keys():
-                label = to_replace[label]
 
-            if label in labels:
-
+            if label in file.labels and label in toReplace[file.name]:
+                label = file.name + "_" + label                    
+           
+            if label in all_labels:
+                label_content = all_labels[label]
                 if instruction[0] == 'j':
-                    instruction[-1] = str(labels[label] + 1)
+                    instruction[-1] = str(label_content.line_number)
                 elif instruction[0] == 'beq' or instruction[0] == 'bne':
-                    instruction[-1] = str(labels[label] - line_number)
+                    print(line_number, label_content.line_number)
+                    instruction[-1] = str(label_content.line_number - line_number - 1)
+
+            
 
             clean_assembled.append(instruction)
             line_number += 1
 
-    print(to_replace)
-    print(labels)
+    for label in all_labels:
+        print(f"{label}: {all_labels[label]}")
     print(clean_assembled)
+
     assembled_hex = []
     for instruction in clean_assembled:
         assembled_hex.append(instruction_to_hex(instruction))
@@ -276,8 +286,13 @@ if __name__ == '__main__':
     output += " ".join(assembled_hex)
 
     #custom output locations?
-    with open(args.o+"/output.hex", "+tw", encoding='utf8') as f:
-        f.write(output)
+    if args.n:
+        file_name = re.split("\/", files_to_link[0])[-1][:-4]
+        with open(f"{args.o}/{file_name}.hex", "+tw", encoding='utf8') as f:
+            f.write(output)
+    else:
+        with open(args.o+"/output.hex", "+tw", encoding='utf8') as f:
+            f.write(output)
 
 
 
