@@ -1,4 +1,3 @@
 /__pycache__
-/asm
 /doc
-*.hex
+output.hex
